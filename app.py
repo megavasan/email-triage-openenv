@@ -28,14 +28,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global env instance (single-session; for multi-user, use session IDs)
+# Global env instance
 env = EmailTriageEnv()
 
 
 # ── Request/Response Schemas ───────────────────────────────────────────────────
 
 class ResetRequest(BaseModel):
-    task_id: str = "task_easy"
+    task_id: Optional[str] = "task_easy"  # DEFAULT so body is not required
 
 class StepRequest(BaseModel):
     action_type: str
@@ -65,9 +65,11 @@ def root():
     }
 
 @app.post("/reset")
-def reset(req: ResetRequest):
+def reset(req: Optional[ResetRequest] = None):
+    # Accept empty body — default to task_easy
+    task_id = (req.task_id if req and req.task_id else None) or "task_easy"
     try:
-        obs = env.reset(task_id=req.task_id)
+        obs = env.reset(task_id=task_id)
         return obs.model_dump()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -106,7 +108,6 @@ def state():
 
 @app.get("/tasks")
 def tasks():
-    """Returns list of tasks and the action schema."""
     return {
         "tasks": [
             {
@@ -152,7 +153,6 @@ def tasks():
 
 @app.post("/grader")
 def grader(req: GraderRequest):
-    """Run a full episode with provided actions and return grader scores."""
     from environment import grade_action, EMAIL_DATASET
 
     if req.task_id not in TASKS:
@@ -191,17 +191,13 @@ def grader(req: GraderRequest):
 
 @app.get("/baseline")
 async def baseline():
-    """
-    Trigger the baseline inference script and return scores for all 3 tasks.
-    Uses Groq API (free) with llama model via OpenAI-compatible client.
-    """
     import subprocess
     import sys
     import json
 
     try:
         result = subprocess.run(
-            [sys.executable, "baseline.py", "--json"],
+            [sys.executable, "inference.py", "--json"],
             capture_output=True, text=True, timeout=120
         )
         if result.returncode == 0:
