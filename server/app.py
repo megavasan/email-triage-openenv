@@ -1,6 +1,5 @@
 """
 FastAPI server exposing the Email Triage OpenEnv environment.
-Endpoints: /reset, /step, /state, /tasks, /grader, /baseline, /health
 """
 
 from fastapi import FastAPI, HTTPException
@@ -11,7 +10,6 @@ import uvicorn
 import os
 import sys
 
-# Support both running from root and from server/ directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.environment import (
@@ -31,11 +29,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global env instance
 env = EmailTriageEnv()
 
-
-# ── Request/Response Schemas ───────────────────────────────────────────────────
 
 class ResetRequest(BaseModel):
     task_id: Optional[str] = "task_easy"
@@ -51,8 +46,6 @@ class GraderRequest(BaseModel):
     task_id: str
     actions: list[dict]
 
-
-# ── Core OpenEnv Endpoints ─────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -119,21 +112,9 @@ def tasks():
             for tid, tcfg in TASKS.items()
         ],
         "action_schema": {
-            "action_type": {
-                "type": "string",
-                "required": True,
-                "values": [a.value for a in ActionType],
-            },
-            "category": {
-                "type": "string",
-                "required": False,
-                "values": [c.value for c in EmailCategory],
-            },
-            "urgency": {
-                "type": "string",
-                "required": False,
-                "values": [u.value for u in UrgencyLevel],
-            },
+            "action_type": {"type": "string", "required": True, "values": [a.value for a in ActionType]},
+            "category": {"type": "string", "required": False, "values": [c.value for c in EmailCategory]},
+            "urgency": {"type": "string", "required": False, "values": [u.value for u in UrgencyLevel]},
             "reply_text": {"type": "string", "required": False},
             "reason": {"type": "string", "required": False}
         }
@@ -142,17 +123,12 @@ def tasks():
 @app.post("/grader")
 def grader(req: GraderRequest):
     from server.environment import grade_action, EMAIL_DATASET
-
     if req.task_id not in TASKS:
         raise HTTPException(status_code=400, detail=f"Unknown task_id: {req.task_id}")
-
     task_cfg = TASKS[req.task_id]
     email_map = {e.id: e for e in EMAIL_DATASET}
     email_queue = [email_map[eid] for eid in task_cfg["email_ids"]]
-
-    scores = []
-    feedbacks = []
-
+    scores, feedbacks = [], []
     for i, (email, action_dict) in enumerate(zip(email_queue, req.actions)):
         try:
             action = Action(
@@ -167,21 +143,13 @@ def grader(req: GraderRequest):
             feedbacks.append(feedback)
         except Exception as e:
             scores.append(0.0)
-            feedbacks.append(f"Error grading action {i}: {e}")
-
-    avg_score = round(sum(scores) / len(scores), 4) if scores else 0.0
-    return {
-        "task_id": req.task_id,
-        "scores": scores,
-        "feedbacks": feedbacks,
-        "average_score": avg_score
-    }
+            feedbacks.append(f"Error: {e}")
+    return {"task_id": req.task_id, "scores": scores, "feedbacks": feedbacks,
+            "average_score": round(sum(scores)/len(scores), 4) if scores else 0.0}
 
 @app.get("/baseline")
 async def baseline():
-    import subprocess
-    import json
-
+    import subprocess, json
     try:
         result = subprocess.run(
             [sys.executable, "inference.py", "--json"],
@@ -190,16 +158,17 @@ async def baseline():
         if result.returncode == 0:
             try:
                 return json.loads(result.stdout)
-            except json.JSONDecodeError:
-                return {"output": result.stdout, "error": result.stderr}
-        else:
-            return {"error": result.stderr or "Failed", "output": result.stdout}
-    except subprocess.TimeoutExpired:
-        return {"error": "Timed out after 120 seconds"}
+            except:
+                return {"output": result.stdout}
+        return {"error": result.stderr or "Failed"}
     except Exception as e:
         return {"error": str(e)}
 
 
-if __name__ == "__main__":
+def main():
     port = int(os.environ.get("PORT", 7860))
     uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=False)
+
+
+if __name__ == "__main__":
+    main()
