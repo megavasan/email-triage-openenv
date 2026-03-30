@@ -1,0 +1,129 @@
+name: email-triage-openenv
+version: "1.0.0"
+description: >
+  An OpenEnv-compliant reinforcement learning environment where AI agents
+  learn to triage a realistic inbox of emails — classifying urgency,
+  assigning categories, drafting replies, escalating issues, and archiving
+  spam. Three tasks of increasing difficulty (easy → medium → hard) with
+  deterministic graders scoring 0.0–1.0.
+
+author: "OpenEnv Hackathon Submission"
+license: MIT
+tags:
+  - openenv
+  - email-triage
+  - nlp
+  - real-world
+  - customer-support
+  - text-classification
+
+environment:
+  type: text
+  observation_space:
+    type: structured
+    fields:
+      - name: current_email
+        type: object
+        description: The email to be triaged (subject, sender, body, timestamp)
+      - name: queue_size
+        type: integer
+        description: Total emails in the episode queue
+      - name: processed_count
+        type: integer
+        description: Number of emails already processed
+      - name: current_task
+        type: string
+        description: Name of the current task
+      - name: task_id
+        type: string
+        description: Task identifier
+      - name: step_number
+        type: integer
+        description: Current step in the episode
+      - name: feedback
+        type: string
+        description: Feedback from previous action
+
+  action_space:
+    type: structured
+    fields:
+      - name: action_type
+        type: enum
+        values: [classify, prioritize, draft_reply, archive, escalate]
+        required: true
+      - name: category
+        type: enum
+        values: [billing, technical, general, spam, complaint, praise, urgent_request]
+        required: false
+      - name: urgency
+        type: enum
+        values: [low, medium, high, critical]
+        required: false
+      - name: reply_text
+        type: string
+        required: false
+        description: Draft reply (used with draft_reply action)
+      - name: reason
+        type: string
+        required: false
+        description: Justification for the action taken
+
+  reward:
+    type: continuous
+    range: [0.0, 1.0]
+    description: >
+      Per-step reward based on accuracy of category (35%), urgency (30%),
+      action type (25%), reply quality (10%). Hard task adds 5% bonus for
+      providing reasoning. Spam escalation is penalized -0.3.
+
+tasks:
+  - id: task_easy
+    name: "Basic Email Classification"
+    difficulty: easy
+    description: >
+      Classify 3 emails with clear, unambiguous signals — a server outage,
+      an obvious spam message, and an overdue invoice. Tests basic
+      category + urgency detection.
+    max_steps: 6
+    emails: 3
+
+  - id: task_medium
+    name: "Email Triage with Replies"
+    difficulty: medium
+    description: >
+      Handle 3 emails requiring careful reading: an API rate-limit question,
+      a customer praise note, and a rescheduling request. Agent must draft
+      a professional reply for the rescheduling email.
+    max_steps: 9
+    emails: 3
+
+  - id: task_hard
+    name: "Full Inbox Management"
+    difficulty: hard
+    description: >
+      Handle 3 nuanced, high-stakes emails: a long-term customer complaint
+      about pricing, a partnership inquiry, and an account-locked emergency
+      ahead of a critical meeting. Requires escalation judgment, diplomatic
+      tone, and reasoning.
+    max_steps: 12
+    emails: 3
+
+api:
+  reset: POST /reset
+  step: POST /step
+  state: GET /state
+  tasks: GET /tasks
+  grader: POST /grader
+  baseline: GET /baseline
+  health: GET /health
+
+runtime:
+  framework: fastapi
+  python: "3.11"
+  port: 7860
+
+dependencies:
+  - fastapi>=0.110.0
+  - uvicorn>=0.29.0
+  - pydantic>=2.0.0
+  - openai>=1.0.0
